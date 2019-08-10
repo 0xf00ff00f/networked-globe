@@ -21,9 +21,8 @@
 class globe_geometry
 {
 public:
-    globe_geometry(float radius, int max_subdivisions, const pixmap &map)
-        : radius_(radius)
-        , max_subdivisions_(max_subdivisions)
+    globe_geometry(int max_subdivisions, const pixmap &map)
+        : max_subdivisions_(max_subdivisions)
     {
         initialize_geometry(map);
         std::cout << (verts_.size() / 3) << " triangles\n";
@@ -66,9 +65,9 @@ private:
         }
         else
         {
-            const auto v01 = radius_ * glm::normalize(0.5f * (v0 + v1));
-            const auto v12 = radius_ * glm::normalize(0.5f * (v1 + v2));
-            const auto v20 = radius_ * glm::normalize(0.5f * (v2 + v0));
+            const auto v01 = glm::normalize(0.5f * (v0 + v1));
+            const auto v12 = glm::normalize(0.5f * (v1 + v2));
+            const auto v20 = glm::normalize(0.5f * (v2 + v0));
 
             subdivide_triangle(v0, v01, v20, level + 1, map);
             subdivide_triangle(v01, v1, v12, level + 1, map);
@@ -79,20 +78,21 @@ private:
 
     void maybe_emit_triangle(const glm::vec3 &v0, const glm::vec3 &v1, const glm::vec3 &v2, const pixmap &map)
     {
-        const auto center = glm::normalize((1.0f / 3) * (v0 + v1 + v2));
+        const auto c0 = map_at(v0, map);
+        const auto c1 = map_at(v1, map);
+        const auto c2 = map_at(v2, map);
 
-        const float longitude = (std::atan2(center.z, -center.x) + M_PI) / (2.0 * M_PI);
+        const auto c = (c0 + c1 + c2) / 3;
 
-        const float d = sqrtf(center.x * center.x + center.z * center.z);
-        const float latitude = (std::atan2(-center.y, d) + 0.5 * M_PI) / M_PI;
-
-        const int c = static_cast<int>(longitude * map.width);
-        const int r = static_cast<int>(latitude * map.height);
-
-        if (!map.data[r * map.width + c])
+        if (c == 0.0)
             return;
 
-        static constexpr float scale = 0.5f;
+        static constexpr float min_scale = 0.0f;
+        static constexpr float max_scale = 0.85f;
+
+        const auto scale = min_scale + c * (max_scale - min_scale);
+        const auto center = (1.0f / 3) * (v0 + v1 + v2);
+
         const auto va = center + scale * (v0 - center);
         const auto vb = center + scale * (v1 - center);
         const auto vc = center + scale * (v2 - center);
@@ -102,7 +102,21 @@ private:
         verts_.push_back(vc);
     }
 
-    float radius_;
+    float map_at(const glm::vec3 &v, const pixmap &map) const
+    {
+        const auto n = glm::normalize(v);
+
+        const float longitude = (std::atan2(n.z, -n.x) + M_PI) / (2.0 * M_PI);
+
+        const float d = sqrtf(n.x * n.x + n.z * n.z);
+        const float latitude = (std::atan2(-n.y, d) + 0.5 * M_PI) / M_PI;
+
+        const int c = static_cast<int>(longitude * map.width);
+        const int r = static_cast<int>(latitude * map.height);
+
+        return static_cast<float>(map.data[r * map.width + c]) / 255;
+    }
+
     int max_subdivisions_;
     using vertex = std::tuple<glm::vec3>;
     std::vector<vertex> verts_;
@@ -132,7 +146,7 @@ private:
         auto map = load_pixmap_from_png("assets/map.png");
         if (map->type != pixmap::pixel_type::GRAY)
             panic("eh?");
-        globe_.reset(new globe_geometry(1, 5, *map));
+        globe_.reset(new globe_geometry(5, *map));
     }
 
     void initialize_shader()
