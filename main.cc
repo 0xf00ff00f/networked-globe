@@ -18,24 +18,27 @@
 #include <iostream>
 #include <memory>
 
-class globe_geometry
+class globe_geometry_builder
 {
 public:
-    globe_geometry(int max_subdivisions, const pixmap &map)
+    globe_geometry_builder(int max_subdivisions, const pixmap &pm)
         : max_subdivisions_(max_subdivisions)
+        , pm_(pm)
     {
-        initialize_geometry(map);
-        std::cout << (verts_.size() / 3) << " triangles\n";
     }
 
-    void render() const
+    std::unique_ptr<geometry> build_geometry()
     {
-        geometry_.bind();
-        glDrawArrays(GL_TRIANGLES, 0, verts_.size());
+        initialize_geometry();
+        std::cout << (verts_.size() / 3) << " triangles\n";
+
+        auto g = std::make_unique<geometry>();
+        g->set_data(verts_);
+        return g;
     }
 
 private:
-    void initialize_geometry(const pixmap &map)
+    void initialize_geometry()
     {
         static const glm::vec3 icosahedron_verts[] = {
             {0, -0.525731, 0.850651},  {0.850651, 0, 0.525731},   {0.850651, 0, -0.525731}, {-0.850651, 0, -0.525731},
@@ -51,17 +54,15 @@ private:
             const auto &v0 = icosahedron_verts[triangle[0] - 1];
             const auto &v1 = icosahedron_verts[triangle[1] - 1];
             const auto &v2 = icosahedron_verts[triangle[2] - 1];
-            subdivide_triangle(v0, v1, v2, 0, map);
+            subdivide_triangle(v0, v1, v2, 0);
         }
-
-        geometry_.set_data(verts_);
     }
 
-    void subdivide_triangle(const glm::vec3 &v0, const glm::vec3 &v1, const glm::vec3 &v2, int level, const pixmap &map)
+    void subdivide_triangle(const glm::vec3 &v0, const glm::vec3 &v1, const glm::vec3 &v2, int level)
     {
         if (level == max_subdivisions_)
         {
-            maybe_emit_triangle(v0, v1, v2, map);
+            maybe_emit_triangle(v0, v1, v2);
         }
         else
         {
@@ -69,18 +70,18 @@ private:
             const auto v12 = glm::normalize(0.5f * (v1 + v2));
             const auto v20 = glm::normalize(0.5f * (v2 + v0));
 
-            subdivide_triangle(v0, v01, v20, level + 1, map);
-            subdivide_triangle(v01, v1, v12, level + 1, map);
-            subdivide_triangle(v20, v12, v2, level + 1, map);
-            subdivide_triangle(v01, v12, v20, level + 1, map);
+            subdivide_triangle(v0, v01, v20, level + 1);
+            subdivide_triangle(v01, v1, v12, level + 1);
+            subdivide_triangle(v20, v12, v2, level + 1);
+            subdivide_triangle(v01, v12, v20, level + 1);
         }
     }
 
-    void maybe_emit_triangle(const glm::vec3 &v0, const glm::vec3 &v1, const glm::vec3 &v2, const pixmap &map)
+    void maybe_emit_triangle(const glm::vec3 &v0, const glm::vec3 &v1, const glm::vec3 &v2)
     {
-        const auto c0 = map_at(v0, map);
-        const auto c1 = map_at(v1, map);
-        const auto c2 = map_at(v2, map);
+        const auto c0 = map_at(v0);
+        const auto c1 = map_at(v1);
+        const auto c2 = map_at(v2);
 
         const auto c = (c0 + c1 + c2) / 3;
 
@@ -88,7 +89,7 @@ private:
             return;
 
         static constexpr float min_scale = 0.0f;
-        static constexpr float max_scale = 0.85f;
+        static constexpr float max_scale = 0.9f;
 
         const auto scale = min_scale + c * (max_scale - min_scale);
         const auto center = (1.0f / 3) * (v0 + v1 + v2);
@@ -102,7 +103,7 @@ private:
         verts_.push_back(vc);
     }
 
-    float map_at(const glm::vec3 &v, const pixmap &map) const
+    float map_at(const glm::vec3 &v) const
     {
         const auto n = glm::normalize(v);
 
@@ -111,16 +112,16 @@ private:
         const float d = sqrtf(n.x * n.x + n.z * n.z);
         const float latitude = (std::atan2(-n.y, d) + 0.5 * M_PI) / M_PI;
 
-        const int c = static_cast<int>(longitude * map.width);
-        const int r = static_cast<int>(latitude * map.height);
+        const int c = static_cast<int>(longitude * pm_.width);
+        const int r = static_cast<int>(latitude * pm_.height);
 
-        return static_cast<float>(map.data[r * map.width + c]) / 255;
+        return static_cast<float>(pm_.data[r * pm_.width + c]) / 255;
     }
 
     int max_subdivisions_;
+    const pixmap &pm_;
     using vertex = std::tuple<glm::vec3>;
     std::vector<vertex> verts_;
-    geometry geometry_;
 };
 
 class demo
@@ -146,7 +147,9 @@ private:
         auto map = load_pixmap_from_png("assets/map.png");
         if (map->type != pixmap::pixel_type::GRAY)
             panic("eh?");
-        globe_.reset(new globe_geometry(5, *map));
+
+        globe_geometry_builder builder(5, *map);
+        globe_ = builder.build_geometry();
     }
 
     void initialize_shader()
@@ -202,7 +205,7 @@ private:
     int window_height_;
     float cur_time_ = 0;
     shader_program program_;
-    std::unique_ptr<globe_geometry> globe_;
+    std::unique_ptr<geometry> globe_;
 };
 
 int main()

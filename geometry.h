@@ -106,28 +106,14 @@ class geometry : private noncopyable
 public:
     geometry()
     {
-        glGenBuffers(2, vbo_);
+        glGenBuffers(1, &vbo_);
         glGenVertexArrays(1, &vao_);
     }
 
     ~geometry()
     {
-        glDeleteBuffers(2, vbo_);
+        glDeleteBuffers(1, &vbo_);
         glDeleteVertexArrays(1, &vao_);
-    }
-
-    template<typename VertexT, typename IndexT>
-    void set_data(const std::vector<VertexT> &verts, const std::vector<IndexT> &indices)
-    {
-        glBindVertexArray(vao_);
-
-        glBindBuffer(GL_ARRAY_BUFFER, vbo_[0]);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(VertexT) * verts.size(), verts.data(), GL_STATIC_DRAW);
-
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, vbo_[1]);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(IndexT) * indices.size(), indices.data(), GL_STATIC_DRAW);
-
-        detail::declare_vertex_attrib_pointers(VertexT{});
     }
 
     template<typename VertexT>
@@ -135,15 +121,24 @@ public:
     {
         glBindVertexArray(vao_);
 
-        glBindBuffer(GL_ARRAY_BUFFER, vbo_[0]);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo_);
         glBufferData(GL_ARRAY_BUFFER, sizeof(VertexT) * verts.size(), verts.data(), GL_STATIC_DRAW);
 
         detail::declare_vertex_attrib_pointers(VertexT{});
+
+        vert_count_ = verts.size();
     }
 
     void bind() const { glBindVertexArray(vao_); }
 
+    void render() const
+    {
+        bind();
+        glDrawArrays(GL_TRIANGLES, 0, vert_count_);
+    }
+
 private:
     GLuint vao_;
-    GLuint vbo_[2];
+    GLuint vbo_;
+    std::size_t vert_count_;
 };
