@@ -1,10 +1,28 @@
 #include "pixmap.h"
 
 #include "panic.h"
-
-#include <png.h>
+#include "noncopyable.h"
 
 #include <algorithm>
+#include <png.h>
+
+class file : private noncopyable
+{
+public:
+    file(const std::string &path)
+        : fp_(fopen(path.c_str(), "rb"))
+    {
+    }
+
+    ~file() { fclose(fp_); }
+
+    operator FILE *() const { return fp_; }
+
+    operator bool() const { return fp_; }
+
+private:
+    FILE *fp_;
+};
 
 pixmap::pixmap(size_t width, size_t height, pixel_type type)
     : width(width)
@@ -81,7 +99,7 @@ pixmap::pixel_type to_pixel_type(png_byte png_color_type)
 
 std::unique_ptr<pixmap> load_pixmap_from_png(const char *path)
 {
-    auto *in_file = fopen(path, "rb");
+    file in_file(path);
     if (!in_file)
         panic("failed to open %s\n", path);
 
