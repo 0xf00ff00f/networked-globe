@@ -131,10 +131,10 @@ public:
 
     void bind() const { glBindVertexArray(vao_); }
 
-    void render() const
+    void render(GLenum mode) const
     {
         bind();
-        glDrawArrays(GL_TRIANGLES, 0, vert_count_);
+        glDrawArrays(mode, 0, vert_count_);
     }
 
 private:

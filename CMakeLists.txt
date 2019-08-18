@@ -24,7 +24,8 @@ add_executable(demo
     rand.cc
     util.cc
     framebuffer.cc
-    pixmap.cc)
+    pixmap.cc
+    globe_geometry.cc)
 
 target_link_libraries(
     demo
