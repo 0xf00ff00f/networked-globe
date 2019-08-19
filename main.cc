@@ -4,6 +4,7 @@
 #include "rand.h"
 #include "shader_program.h"
 #include "globe_geometry.h"
+#include "cities_geometry.h"
 #include "util.h"
 
 #include <GL/glew.h>
@@ -30,7 +31,7 @@ public:
 
     void render_and_step(float dt)
     {
-        render(program_);
+        render();
         cur_time_ += dt;
     }
 
@@ -38,16 +39,22 @@ private:
     void initialize_meshes()
     {
         globe_ = build_globe_geometry(6, "assets/map.png");
+        cities_ = build_cities_geometry();
     }
 
     void initialize_shader()
     {
-        program_.add_shader(GL_VERTEX_SHADER, "shaders/sphere.vert");
-        program_.add_shader(GL_FRAGMENT_SHADER, "shaders/sphere.frag");
-        program_.link();
+        globe_program_.add_shader(GL_VERTEX_SHADER, "shaders/sphere.vert");
+        globe_program_.add_shader(GL_FRAGMENT_SHADER, "shaders/sphere.frag");
+        globe_program_.link();
+
+        cities_program_.add_shader(GL_VERTEX_SHADER, "shaders/cities.vert");
+        cities_program_.add_shader(GL_GEOMETRY_SHADER, "shaders/cities.geom");
+        cities_program_.add_shader(GL_FRAGMENT_SHADER, "shaders/cities.frag");
+        cities_program_.link();
     }
 
-    void render(const shader_program &program) const
+    void render() const
     {
         glViewport(0, 0, window_width_, window_height_);
         glClearColor(0.5, 0.5, 0.5, 0);
@@ -60,8 +67,6 @@ private:
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-        glEnable(GL_CULL_FACE);
 
         const auto projection =
             glm::perspective(glm::radians(45.0f), static_cast<float>(window_width_) / window_height_, 0.1f, 100.f);
@@ -77,23 +82,32 @@ private:
         model_normal = glm::inverse(model_normal);
         model_normal = glm::transpose(model_normal);
 
-        program_.bind();
-        program_.set_uniform(program.uniform_location("mvp"), mvp);
-
-        program_.set_uniform(program.uniform_location("color"), glm::vec4(1));
+        glEnable(GL_CULL_FACE);
+        globe_program_.bind();
+        globe_program_.set_uniform(globe_program_.uniform_location("mvp"), mvp);
+        globe_program_.set_uniform(globe_program_.uniform_location("color"), glm::vec4(1));
         glCullFace(GL_BACK);
-        globe_->render(GL_TRIANGLES);
 
-        program_.set_uniform(program.uniform_location("color"), glm::vec4(0.8));
+        globe_->render(GL_TRIANGLES);
+        globe_program_.set_uniform(globe_program_.uniform_location("color"), glm::vec4(0.8));
         glCullFace(GL_FRONT);
         globe_->render(GL_TRIANGLES);
+
+        glDepthMask(GL_FALSE);
+        glDisable(GL_CULL_FACE);
+        cities_program_.bind();
+        cities_program_.set_uniform(cities_program_.uniform_location("mvp"), mvp);
+        cities_->render(GL_POINTS);
+        glDepthMask(GL_TRUE);
     }
 
     int window_width_;
     int window_height_;
     float cur_time_ = 0;
-    shader_program program_;
     std::unique_ptr<geometry> globe_;
+    std::unique_ptr<geometry> cities_;
+    shader_program globe_program_;
+    shader_program cities_program_;
 };
 
 int main()
