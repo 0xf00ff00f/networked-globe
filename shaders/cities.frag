@@ -1,5 +1,7 @@
 #version 450 core
 
+uniform vec4 color;
+
 in sprite_vertex {
     vec2 tex_coord;
 } fs_in;
@@ -12,5 +14,5 @@ void main(void)
     const float r = 0.5;
     const float thickness = 0.2;
     const float d = 1.0 - smoothstep(0.0, thickness, abs(l - r));
-    frag_color = vec4(1, 0, 0, d);
+    frag_color = vec4(color.rgb, d);
 }

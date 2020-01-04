@@ -18,8 +18,8 @@
 
 #include <iostream>
 #include <memory>
-#include <random>
 #include <algorithm>
+#include <cstdlib>
 
 // TODO factor this out (also used in cities_geometry)
 namespace
@@ -36,7 +36,7 @@ glm::vec3 to_position(float latitude, float longitude)
 
 std::unique_ptr<geometry> build_connection_geometry(const glm::vec3 &from_normal, const glm::vec3 &to_normal, float max_height)
 {
-    std::vector<std::tuple<glm::vec3>> verts;
+    std::vector<std::tuple<glm::vec3, float>> verts;
 
     constexpr const auto num_steps = 256;
 
@@ -46,7 +46,7 @@ std::unique_ptr<geometry> build_connection_geometry(const glm::vec3 &from_normal
         auto v = glm::normalize(from_normal + t * (to_normal - from_normal));
         const auto s = 1.0 + max_height * (1.0 - 4.0 * (t - 0.5) * (t - 0.5));
         v *= s;
-        verts.emplace_back(v);
+        verts.emplace_back(v, t);
     }
 
     auto g = std::make_unique<geometry>();
@@ -69,6 +69,7 @@ public:
     void render_and_step(float dt)
     {
         render();
+        step_connections();
         cur_time_ += dt;
     }
 
@@ -89,31 +90,38 @@ private:
             return to_position(city.latitude, city.longitude);
         });
 
-        std::default_random_engine rnd;
-        std::uniform_int_distribution<int> dist(0, cities.size() - 1);
-
         constexpr const auto num_connections = 5;
-        constexpr const auto min_distance = 0.75;
+        constexpr const auto min_distance = 0.5;
 
         constexpr const auto min_height = 0.05;
-        constexpr const auto max_height = 0.2;
+        constexpr const auto max_height = 0.3;
 
         constexpr const auto max_per_city = 3;
 
-        for (int i = 0; i < city_positions.size() - 1; ++i)
+        graph_.resize(city_positions.size());
+
+        for (int i = 0; i < city_positions.size(); ++i)
         {
-            int connection_count = 0;
-            for (int j = i + 1; j < city_positions.size(); ++j)
+            for (int j = 0; j < city_positions.size(); ++j)
             {
+                if (i == j)
+                    continue;
+
                 const auto &from = city_positions[i];
                 const auto &to = city_positions[j];
                 const auto d = glm::distance(from, to);
                 if (d < min_distance)
                 {
+                    auto conn = std::make_unique<connection>();
+
+                    conn->active = (std::rand() % 100) == 0;
+                    conn->elapsed = 0;
+                    conn->target_city = j;
+
                     const auto height = min_height + (d / min_distance) * (max_height - min_height);
-                    connections_.push_back(build_connection_geometry(from, to, height));
-                    if (++connection_count == max_per_city)
-                        break;
+                    conn->mesh = build_connection_geometry(from, to, height);
+
+                    graph_[i].push_back(std::move(conn));
                 }
             }
         }
@@ -146,7 +154,7 @@ private:
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LESS);
 
-        glLineWidth(2.0);
+        glLineWidth(3.0);
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -157,7 +165,7 @@ private:
         const auto view_up = glm::vec3(0, 1, 0);
         const auto view = glm::lookAt(view_pos, glm::vec3(0, 0, 0), view_up);
 
-        const auto angle = 0.75f * cur_time_;
+        const auto angle = -0.2f * 0.75f * cur_time_ + 1.5f;
         const auto model = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0, 1, 0));
         const auto mvp = projection * view * model;
 
@@ -181,15 +189,55 @@ private:
         glDepthMask(GL_FALSE);
         cities_program_.bind();
         cities_program_.set_uniform(cities_program_.uniform_location("mvp"), mvp);
+        cities_program_.set_uniform(connection_program_.uniform_location("color"), glm::vec4(1.0, 0.35, 0.0, 1.0));
         cities_->render(GL_POINTS);
+
+        const float tex_offset = 0.5f * cur_time_;
 
         connection_program_.bind();
         connection_program_.set_uniform(connection_program_.uniform_location("mvp"), mvp);
-        connection_program_.set_uniform(connection_program_.uniform_location("color"), glm::vec4(1.0, 0.0, 0.0, 0.5));
-        for (const auto &c : connections_)
-            c->render(GL_LINE_STRIP);
+        connection_program_.set_uniform(connection_program_.uniform_location("color"), glm::vec4(1.0, 0.35, 0.0, 1.0));
+
+        for (auto &city : graph_)
+        {
+            for (auto &conn : city)
+            {
+                if (conn->active)
+                {
+                    connection_program_.set_uniform(connection_program_.uniform_location("tex_offset"), conn->elapsed);
+                    conn->mesh->render(GL_LINE_STRIP);
+                }
+            }
+        }
 
         glDepthMask(GL_TRUE);
+    }
+
+    void step_connections()
+    {
+        for (auto &city : graph_)
+        {
+            for (auto &conn : city)
+            {
+                if (!conn->active || conn->elapsed >= 1.0)
+                    continue;
+                conn->elapsed += 0.02;
+                if (conn->elapsed >= 1.0)
+                {
+                    auto &target_city = graph_[conn->target_city];
+                    int activated = 0;
+                    for (auto &next_conn : target_city)
+                    {
+                        if (!next_conn->active)
+                        {
+                            next_conn->active = true;
+                            if (++activated == 3)
+                                break;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     int window_width_;
@@ -197,7 +245,16 @@ private:
     float cur_time_ = 0;
     std::unique_ptr<geometry> globe_;
     std::unique_ptr<geometry> cities_;
-    std::vector<std::unique_ptr<geometry>> connections_;
+
+    struct connection
+    {
+        bool active;
+        float elapsed;
+        int target_city;
+        std::unique_ptr<geometry> mesh;
+    };
+    std::vector<std::vector<std::unique_ptr<connection>>> graph_;
+
     shader_program globe_program_;
     shader_program cities_program_;
     shader_program connection_program_;
@@ -232,7 +289,7 @@ int main()
     });
 
 #ifdef DUMP_FRAMES
-    constexpr auto total_frames = 3 * 40;
+    constexpr auto total_frames = 500;
     auto frame_num = 0;
 #endif
 
