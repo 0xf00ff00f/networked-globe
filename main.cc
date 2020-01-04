@@ -198,9 +198,9 @@ private:
         connection_program_.set_uniform(connection_program_.uniform_location("mvp"), mvp);
         connection_program_.set_uniform(connection_program_.uniform_location("color"), glm::vec4(1.0, 0.35, 0.0, 1.0));
 
-        for (auto &city : graph_)
+        for (const auto &city : graph_)
         {
-            for (auto &conn : city)
+            for (const auto &conn : city)
             {
                 if (conn->active)
                 {
