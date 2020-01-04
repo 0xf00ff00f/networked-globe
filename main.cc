@@ -5,6 +5,7 @@
 #include "shader_program.h"
 #include "globe_geometry.h"
 #include "cities_geometry.h"
+#include "cities.h"
 #include "util.h"
 
 #include <GL/glew.h>
@@ -17,6 +18,41 @@
 
 #include <iostream>
 #include <memory>
+#include <random>
+#include <algorithm>
+
+// TODO factor this out (also used in cities_geometry)
+namespace
+{
+glm::vec3 to_position(float latitude, float longitude)
+{
+    const auto y = std::sin(latitude);
+    const auto r = std::cos(latitude);
+    const auto z = r * std::sin(longitude);
+    const auto x = - r * std::cos(longitude);
+    return {x, y, z};
+}
+}
+
+std::unique_ptr<geometry> build_connection_geometry(const glm::vec3 &from_normal, const glm::vec3 &to_normal, float max_height)
+{
+    std::vector<std::tuple<glm::vec3>> verts;
+
+    constexpr const auto num_steps = 256;
+
+    for (int i = 0; i < num_steps; ++i)
+    {
+        const float t = static_cast<float>(i) / (num_steps - 1);
+        auto v = glm::normalize(from_normal + t * (to_normal - from_normal));
+        const auto s = 1.0 + max_height * (1.0 - 4.0 * (t - 0.5) * (t - 0.5));
+        v *= s;
+        verts.emplace_back(v);
+    }
+
+    auto g = std::make_unique<geometry>();
+    g->set_data(verts);
+    return g;
+}
 
 class demo
 {
@@ -26,6 +62,7 @@ public:
         , window_height_(window_height)
     {
         initialize_meshes();
+        initialize_connections();
         initialize_shader();
     }
 
@@ -42,6 +79,46 @@ private:
         cities_ = build_cities_geometry();
     }
 
+    void initialize_connections()
+    {
+        const auto &cities = get_cities();
+
+        std::vector<glm::vec3> city_positions;
+        city_positions.reserve(cities.size());
+        std::transform(cities.begin(), cities.end(), std::back_inserter(city_positions), [](const auto &city) {
+            return to_position(city.latitude, city.longitude);
+        });
+
+        std::default_random_engine rnd;
+        std::uniform_int_distribution<int> dist(0, cities.size() - 1);
+
+        constexpr const auto num_connections = 5;
+        constexpr const auto min_distance = 0.75;
+
+        constexpr const auto min_height = 0.05;
+        constexpr const auto max_height = 0.2;
+
+        constexpr const auto max_per_city = 3;
+
+        for (int i = 0; i < city_positions.size() - 1; ++i)
+        {
+            int connection_count = 0;
+            for (int j = i + 1; j < city_positions.size(); ++j)
+            {
+                const auto &from = city_positions[i];
+                const auto &to = city_positions[j];
+                const auto d = glm::distance(from, to);
+                if (d < min_distance)
+                {
+                    const auto height = min_height + (d / min_distance) * (max_height - min_height);
+                    connections_.push_back(build_connection_geometry(from, to, height));
+                    if (++connection_count == max_per_city)
+                        break;
+                }
+            }
+        }
+    }
+
     void initialize_shader()
     {
         globe_program_.add_shader(GL_VERTEX_SHADER, "shaders/sphere.vert");
@@ -52,6 +129,10 @@ private:
         cities_program_.add_shader(GL_GEOMETRY_SHADER, "shaders/cities.geom");
         cities_program_.add_shader(GL_FRAGMENT_SHADER, "shaders/cities.frag");
         cities_program_.link();
+
+        connection_program_.add_shader(GL_VERTEX_SHADER, "shaders/connection.vert");
+        connection_program_.add_shader(GL_FRAGMENT_SHADER, "shaders/connection.frag");
+        connection_program_.link();
     }
 
     void render() const
@@ -64,6 +145,8 @@ private:
 
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LESS);
+
+        glLineWidth(2.0);
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -93,11 +176,19 @@ private:
         glCullFace(GL_FRONT);
         globe_->render(GL_TRIANGLES);
 
-        glDepthMask(GL_FALSE);
         glDisable(GL_CULL_FACE);
+
+        glDepthMask(GL_FALSE);
         cities_program_.bind();
         cities_program_.set_uniform(cities_program_.uniform_location("mvp"), mvp);
         cities_->render(GL_POINTS);
+
+        connection_program_.bind();
+        connection_program_.set_uniform(connection_program_.uniform_location("mvp"), mvp);
+        connection_program_.set_uniform(connection_program_.uniform_location("color"), glm::vec4(1.0, 0.0, 0.0, 0.5));
+        for (const auto &c : connections_)
+            c->render(GL_LINE_STRIP);
+
         glDepthMask(GL_TRUE);
     }
 
@@ -106,14 +197,16 @@ private:
     float cur_time_ = 0;
     std::unique_ptr<geometry> globe_;
     std::unique_ptr<geometry> cities_;
+    std::vector<std::unique_ptr<geometry>> connections_;
     shader_program globe_program_;
     shader_program cities_program_;
+    shader_program connection_program_;
 };
 
 int main()
 {
-    constexpr auto window_width = 800;
-    constexpr auto window_height = 400;
+    constexpr auto window_width = 600;
+    constexpr auto window_height = 600;
 
     if (!glfwInit())
         panic("glfwInit failed\n");
