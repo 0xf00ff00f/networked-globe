@@ -1,8 +1,7 @@
 #include "cities_geometry.h"
 
 #include "geometry.h"
-
-#include "cities.cc"
+#include "cities.h"
 
 #include <algorithm>
 #include <cmath>
@@ -21,6 +20,7 @@ glm::vec3 to_position(float latitude, float longitude)
 
 std::unique_ptr<geometry> build_cities_geometry()
 {
+    const auto &cities = get_cities();
     std::vector<std::tuple<glm::vec3>> verts;
     verts.reserve(std::size(cities));
     std::transform(std::begin(cities), std::end(cities), std::back_inserter(verts), [](const auto &city) {

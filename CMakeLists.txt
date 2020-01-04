@@ -26,7 +26,8 @@ add_executable(demo
     framebuffer.cc
     pixmap.cc
     globe_geometry.cc
-    cities_geometry.cc)
+    cities_geometry.cc
+    cities.cc)
 
 target_link_libraries(
     demo
