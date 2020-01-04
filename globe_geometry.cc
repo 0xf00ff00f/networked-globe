@@ -8,6 +8,7 @@
 #include <sstream>
 #include <map>
 #include <algorithm>
+#include <cstdlib>
 
 namespace glm
 {
@@ -133,7 +134,11 @@ private:
             if (map_at(center) == 0)
                 continue;
 
-            const float scale = 0.8f;
+            constexpr const float min_shade = 0.7;
+            constexpr const float max_shade = 1.0;
+
+            const float scale = 0.7f;
+            const float shade = min_shade + (static_cast<float>(std::rand()) / RAND_MAX) * (max_shade - min_shade);
 
             for (size_t i = 0; i < verts.size(); ++i)
             {
@@ -141,9 +146,9 @@ private:
                 const auto &b = verts[(i + 1) % verts.size()];
                 const auto as = center + scale * (a - center);
                 const auto bs = center + scale * (b - center);
-                verts_.push_back({center, normal});
-                verts_.push_back({as, normal});
-                verts_.push_back({bs, normal});
+                verts_.push_back({center, normal, shade});
+                verts_.push_back({as, normal, shade});
+                verts_.push_back({bs, normal, shade});
             }
         }
     }
@@ -177,7 +182,7 @@ private:
 
     int max_subdivisions_;
     const pixmap &pm_;
-    using vertex = std::tuple<glm::vec3, glm::vec3>;
+    using vertex = std::tuple<glm::vec3, glm::vec3, float>;
     std::vector<vertex> verts_;
 };
 

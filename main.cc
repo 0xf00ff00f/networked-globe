@@ -6,6 +6,7 @@
 #include "globe_geometry.h"
 #include "cities_geometry.h"
 #include "cities.h"
+#include "blur_effect.h"
 #include "util.h"
 
 #include <GL/glew.h>
@@ -20,6 +21,8 @@
 #include <memory>
 #include <algorithm>
 #include <cstdlib>
+
+#define GLOW
 
 // TODO factor this out (also used in cities_geometry)
 namespace
@@ -60,6 +63,7 @@ public:
     demo(int window_width, int window_height)
         : window_width_(window_width)
         , window_height_(window_height)
+        , blur_(window_width, window_height)
     {
         initialize_meshes();
         initialize_connections();
@@ -145,20 +149,6 @@ private:
 
     void render() const
     {
-        glViewport(0, 0, window_width_, window_height_);
-        glClearColor(0.5, 0.5, 0.5, 0);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        glEnable(GL_MULTISAMPLE);
-
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LESS);
-
-        glLineWidth(3.0);
-
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
         const auto projection =
             glm::perspective(glm::radians(45.0f), static_cast<float>(window_width_) / window_height_, 0.1f, 100.f);
         const auto view_pos = glm::vec3(0, 1.3, 3);
@@ -169,24 +159,61 @@ private:
         const auto model = glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0, 1, 0));
         const auto mvp = projection * view * model;
 
-        glm::mat3 model_normal(model);
-        model_normal = glm::inverse(model_normal);
-        model_normal = glm::transpose(model_normal);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+#ifdef GLOW
+        blur_.bind();
+
+        glViewport(0, 0, blur_.width(), blur_.height());
+        glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        glDisable(GL_MULTISAMPLE);
+        glLineWidth(3.0);
+
+        render_planet(mvp, glm::vec4(0), glm::vec4(0));
+        render_connections(mvp, glm::vec4(0.5, 0.35, 0.0, 1.0));
+        framebuffer::unbind();
+#endif
+
+        glViewport(0, 0, window_width_, window_height_);
+        glClearColor(0, 0, 0, 0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        glEnable(GL_MULTISAMPLE);
+        glLineWidth(3.0);
+
+        render_planet(mvp, glm::vec4(1), glm::vec4(0.8));
+        render_connections(mvp, glm::vec4(1.0, 0.35, 0.0, 1.0));
+
+#ifdef GLOW
+        blur_.render(window_width_, window_height_);
+#endif
+    }
+
+    void render_planet(const glm::mat4 &mvp, const glm::vec4 &front_color, const glm::vec4 &back_color) const
+    {
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
 
         glEnable(GL_CULL_FACE);
         globe_program_.bind();
         globe_program_.set_uniform(globe_program_.uniform_location("mvp"), mvp);
-        globe_program_.set_uniform(globe_program_.uniform_location("color"), glm::vec4(1));
+        globe_program_.set_uniform(globe_program_.uniform_location("color"), front_color);
         glCullFace(GL_BACK);
 
         globe_->render(GL_TRIANGLES);
-        globe_program_.set_uniform(globe_program_.uniform_location("color"), glm::vec4(0.8));
+        globe_program_.set_uniform(globe_program_.uniform_location("color"), back_color);
         glCullFace(GL_FRONT);
         globe_->render(GL_TRIANGLES);
+    }
 
+    void render_connections(const glm::mat4 &mvp, const glm::vec4 &color) const
+    {
         glDisable(GL_CULL_FACE);
-
         glDepthMask(GL_FALSE);
+
         cities_program_.bind();
         cities_program_.set_uniform(cities_program_.uniform_location("mvp"), mvp);
         cities_program_.set_uniform(connection_program_.uniform_location("color"), glm::vec4(1.0, 0.35, 0.0, 1.0));
@@ -196,7 +223,7 @@ private:
 
         connection_program_.bind();
         connection_program_.set_uniform(connection_program_.uniform_location("mvp"), mvp);
-        connection_program_.set_uniform(connection_program_.uniform_location("color"), glm::vec4(1.0, 0.35, 0.0, 1.0));
+        connection_program_.set_uniform(connection_program_.uniform_location("color"), color);
 
         for (const auto &city : graph_)
         {
@@ -258,12 +285,13 @@ private:
     shader_program globe_program_;
     shader_program cities_program_;
     shader_program connection_program_;
+    blur_effect blur_;
 };
 
 int main()
 {
-    constexpr auto window_width = 600;
-    constexpr auto window_height = 600;
+    constexpr auto window_width = 1000;
+    constexpr auto window_height = 1000;
 
     if (!glfwInit())
         panic("glfwInit failed\n");

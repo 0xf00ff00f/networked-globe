@@ -28,7 +28,7 @@ public:
         glViewport(0, 0, vert_blur_fb_.width(), vert_blur_fb_.height());
     }
 
-    void render(int width, int height)
+    void render(int width, int height) const
     {
         glDisable(GL_DEPTH_TEST);
         quad_.bind();
