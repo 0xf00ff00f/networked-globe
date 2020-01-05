@@ -4,7 +4,6 @@
 #include "rand.h"
 #include "shader_program.h"
 #include "globe_geometry.h"
-#include "cities_geometry.h"
 #include "cities.h"
 #include "blur_effect.h"
 #include "util.h"
@@ -24,7 +23,6 @@
 
 #define GLOW
 
-// TODO factor this out (also used in cities_geometry)
 namespace
 {
 glm::vec3 to_position(float latitude, float longitude)
@@ -65,6 +63,7 @@ public:
         , window_height_(window_height)
         , blur_(window_width/2, window_height/2)
     {
+        initialize_graph();
         initialize_meshes();
         initialize_connections();
         initialize_shader();
@@ -78,54 +77,56 @@ public:
     }
 
 private:
+    void initialize_graph()
+    {
+        const auto &cities = get_cities();
+
+        graph_.reserve(cities.size());
+        std::transform(cities.begin(), cities.end(), std::back_inserter(graph_), [](const auto &city) -> graph_vertex {
+            return {to_position(city.latitude, city.longitude), {}};
+        });
+    }
+
     void initialize_meshes()
     {
         globe_ = build_globe_geometry(6, "assets/map.png");
-        cities_ = build_cities_geometry();
+
+        cities_ = std::make_unique<geometry>();
+        cities_->set_data<city_vertex>(nullptr, graph_.size());
     }
 
     void initialize_connections()
     {
-        const auto &cities = get_cities();
-
-        std::vector<glm::vec3> city_positions;
-        city_positions.reserve(cities.size());
-        std::transform(cities.begin(), cities.end(), std::back_inserter(city_positions), [](const auto &city) {
-            return to_position(city.latitude, city.longitude);
-        });
-
         constexpr const auto num_connections = 5;
-        constexpr const auto min_distance = 0.5;
+        constexpr const auto min_distance = 0.75;
 
         constexpr const auto min_height = 0.05;
         constexpr const auto max_height = 0.3;
 
         constexpr const auto max_per_city = 3;
 
-        graph_.resize(city_positions.size());
-
-        for (int i = 0; i < city_positions.size(); ++i)
+        for (int i = 0; i < graph_.size(); ++i)
         {
-            for (int j = 0; j < city_positions.size(); ++j)
+            for (int j = 0; j < graph_.size(); ++j)
             {
                 if (i == j)
                     continue;
 
-                const auto &from = city_positions[i];
-                const auto &to = city_positions[j];
+                const auto &from = graph_[i].position;
+                const auto &to = graph_[j].position;
                 const auto d = glm::distance(from, to);
                 if (d < min_distance)
                 {
                     auto conn = std::make_unique<connection>();
 
-                    conn->active = (std::rand() % 100) == 0;
+                    conn->active = (std::rand() % 150) == 0;
                     conn->elapsed = 0;
-                    conn->target_city = j;
+                    conn->target_vertex = j;
 
                     const auto height = min_height + (d / min_distance) * (max_height - min_height);
                     conn->mesh = build_connection_geometry(from, to, height);
 
-                    graph_[i].push_back(std::move(conn));
+                    graph_[i].connections.push_back(std::move(conn));
                 }
             }
         }
@@ -149,6 +150,8 @@ private:
 
     void render() const
     {
+        update_cities_mesh();
+
         const auto projection =
             glm::perspective(glm::radians(45.0f), static_cast<float>(window_width_) / window_height_, 0.1f, 100.f);
         const auto view_pos = glm::vec3(0, 1.3, 3);
@@ -217,7 +220,7 @@ private:
         cities_program_.bind();
         cities_program_.set_uniform(cities_program_.uniform_location("mvp"), mvp);
         cities_program_.set_uniform(connection_program_.uniform_location("color"), glm::vec4(1.0, 0.35, 0.0, 1.0));
-        cities_->render(GL_POINTS);
+        cities_->render(GL_POINTS, num_active_cities_);
 
         const float tex_offset = 0.5f * cur_time_;
 
@@ -225,9 +228,9 @@ private:
         connection_program_.set_uniform(connection_program_.uniform_location("mvp"), mvp);
         connection_program_.set_uniform(connection_program_.uniform_location("color"), color);
 
-        for (const auto &city : graph_)
+        for (const auto &vertex : graph_)
         {
-            for (const auto &conn : city)
+            for (const auto &conn : vertex.connections)
             {
                 if (conn->active)
                 {
@@ -240,20 +243,44 @@ private:
         glDepthMask(GL_TRUE);
     }
 
+    void update_cities_mesh() const
+    {
+        num_active_cities_ = 0;
+
+        auto *vert_data = cities_->map_vertex_data<city_vertex>();
+
+        for (const auto &vertex : graph_)
+        {
+            const auto &connections = vertex.connections;
+            if (connections.empty())
+                continue;
+            auto it = std::max_element(connections.begin(), connections.end(),
+                                       [](const auto &a, const auto &b) { return a->elapsed < b->elapsed; });
+            const auto elapsed = (*it)->elapsed;
+            if (elapsed == 0.f)
+                continue;
+            const float alpha = std::min(1.0f, elapsed * 2.0f);
+            *vert_data++ = {vertex.position, alpha};
+            ++num_active_cities_;
+        }
+
+        cities_->unmap_vertex_data();
+    }
+
     void step_connections()
     {
-        for (auto &city : graph_)
+        for (auto &vertex : graph_)
         {
-            for (auto &conn : city)
+            for (auto &conn : vertex.connections)
             {
                 if (!conn->active || conn->elapsed >= 1.0)
                     continue;
                 conn->elapsed += 0.02;
                 if (conn->elapsed >= 1.0)
                 {
-                    auto &target_city = graph_[conn->target_city];
+                    auto &target_vertex = graph_[conn->target_vertex];
                     int activated = 0;
-                    for (auto &next_conn : target_city)
+                    for (auto &next_conn : target_vertex.connections)
                     {
                         if (!next_conn->active)
                         {
@@ -273,14 +300,25 @@ private:
     std::unique_ptr<geometry> globe_;
     std::unique_ptr<geometry> cities_;
 
+    using city_vertex = std::tuple<glm::vec3, float>;
+
     struct connection
     {
         bool active;
-        float elapsed;
-        int target_city;
+        float elapsed = 0.0;;
+        int target_vertex;
         std::unique_ptr<geometry> mesh;
     };
-    std::vector<std::vector<std::unique_ptr<connection>>> graph_;
+
+    struct graph_vertex
+    {
+        glm::vec3 position;
+        std::vector<std::unique_ptr<connection>> connections;
+    };
+
+    std::vector<graph_vertex> graph_;
+
+    mutable int num_active_cities_;
 
     shader_program globe_program_;
     shader_program cities_program_;

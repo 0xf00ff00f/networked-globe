@@ -4,6 +4,7 @@ uniform vec4 color;
 
 in sprite_vertex {
     vec2 tex_coord;
+    float alpha;
 } fs_in;
 
 out vec4 frag_color;
@@ -14,5 +15,5 @@ void main(void)
     const float r = 0.5;
     const float thickness = 0.2;
     const float d = 1.0 - smoothstep(0.0, thickness, abs(l - r));
-    frag_color = vec4(color.rgb, d);
+    frag_color = vec4(color.rgb, d * fs_in.alpha);
 }

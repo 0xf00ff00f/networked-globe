@@ -119,22 +119,46 @@ public:
     template<typename VertexT>
     void set_data(const std::vector<VertexT> &verts)
     {
+        set_data(verts.data(), verts.size());
+    }
+
+    template<typename VertexT>
+    void set_data(const VertexT *vert_data, int vert_count)
+    {
         glBindVertexArray(vao_);
 
         glBindBuffer(GL_ARRAY_BUFFER, vbo_);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(VertexT) * verts.size(), verts.data(), GL_STATIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(VertexT) * vert_count, vert_data, GL_STATIC_DRAW);
 
         detail::declare_vertex_attrib_pointers(VertexT{});
 
-        vert_count_ = verts.size();
+        vert_count_ = vert_count;
+    }
+
+    template<typename VertexT>
+    VertexT *map_vertex_data()
+    {
+        glBindBuffer(GL_ARRAY_BUFFER, vbo_);
+        return reinterpret_cast<VertexT *>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
+    }
+
+    static void unmap_vertex_data()
+    {
+        glUnmapBuffer(GL_ARRAY_BUFFER);
+        glBindBuffer(GL_ARRAY_BUFFER, 0);
     }
 
     void bind() const { glBindVertexArray(vao_); }
 
     void render(GLenum mode) const
     {
+        render(mode, vert_count_);
+    }
+
+    void render(GLenum mode, int vert_count) const
+    {
         bind();
-        glDrawArrays(mode, 0, vert_count_);
+        glDrawArrays(mode, 0, vert_count);
     }
 
 private:
