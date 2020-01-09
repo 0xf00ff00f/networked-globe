@@ -1,6 +1,5 @@
 #include "globe_geometry.h"
 
-#include "geometry.h"
 #include "pixmap.h"
 
 #include <glm/glm.hpp>
@@ -27,12 +26,12 @@ public:
     {
     }
 
-    std::unique_ptr<geometry> build_geometry()
+    std::unique_ptr<geometry<globe_vertex>> build_geometry()
     {
         initialize_geometry();
         std::cout << (verts_.size() / 3) << " triangles\n";
 
-        auto g = std::make_unique<geometry>();
+        auto g = std::make_unique<geometry<globe_vertex>>();
         g->set_data(verts_);
         return g;
     }
@@ -182,11 +181,10 @@ private:
 
     int max_subdivisions_;
     const pixmap &pm_;
-    using vertex = std::tuple<glm::vec3, glm::vec3, float>;
-    std::vector<vertex> verts_;
+    std::vector<globe_vertex> verts_;
 };
 
-std::unique_ptr<geometry> build_globe_geometry(int max_subdivisions, const char *pixmap_path)
+std::unique_ptr<geometry<globe_vertex>> build_globe_geometry(int max_subdivisions, const char *pixmap_path)
 {
     auto pm = load_pixmap_from_png(pixmap_path);
     if (pm->type != pixmap::pixel_type::GRAY)

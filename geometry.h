@@ -101,6 +101,7 @@ void declare_vertex_attrib_pointers(std::tuple<Ts...>)
 }
 }
 
+template<typename VertexT>
 class geometry : private noncopyable
 {
 public:
@@ -116,13 +117,11 @@ public:
         glDeleteVertexArrays(1, &vao_);
     }
 
-    template<typename VertexT>
     void set_data(const std::vector<VertexT> &verts)
     {
         set_data(verts.data(), verts.size());
     }
 
-    template<typename VertexT>
     void set_data(const VertexT *vert_data, int vert_count)
     {
         glBindVertexArray(vao_);
@@ -135,7 +134,6 @@ public:
         vert_count_ = vert_count;
     }
 
-    template<typename VertexT>
     VertexT *map_vertex_data()
     {
         glBindBuffer(GL_ARRAY_BUFFER, vbo_);

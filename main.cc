@@ -25,6 +25,8 @@
 
 namespace
 {
+using connection_vertex = std::tuple<glm::vec3, float>;
+
 glm::vec3 to_position(float latitude, float longitude)
 {
     const auto y = std::sin(latitude);
@@ -33,11 +35,10 @@ glm::vec3 to_position(float latitude, float longitude)
     const auto x = - r * std::cos(longitude);
     return {x, y, z};
 }
-}
 
-std::unique_ptr<geometry> build_connection_geometry(const glm::vec3 &from_normal, const glm::vec3 &to_normal, float max_height)
+std::unique_ptr<geometry<connection_vertex>> build_connection_geometry(const glm::vec3 &from_normal, const glm::vec3 &to_normal, float max_height)
 {
-    std::vector<std::tuple<glm::vec3, float>> verts;
+    std::vector<connection_vertex> verts;
 
     constexpr const auto num_steps = 256;
 
@@ -50,9 +51,10 @@ std::unique_ptr<geometry> build_connection_geometry(const glm::vec3 &from_normal
         verts.emplace_back(v, t);
     }
 
-    auto g = std::make_unique<geometry>();
+    auto g = std::make_unique<geometry<connection_vertex>>();
     g->set_data(verts);
     return g;
+}
 }
 
 class demo
@@ -91,8 +93,8 @@ private:
     {
         globe_ = build_globe_geometry(6, "assets/map.png");
 
-        cities_ = std::make_unique<geometry>();
-        cities_->set_data<city_vertex>(nullptr, graph_.size());
+        cities_ = std::make_unique<geometry<city_vertex>>();
+        cities_->set_data(nullptr, graph_.size());
     }
 
     void initialize_connections()
@@ -247,7 +249,7 @@ private:
     {
         num_active_cities_ = 0;
 
-        auto *vert_data = cities_->map_vertex_data<city_vertex>();
+        auto *vert_data = cities_->map_vertex_data();
 
         for (const auto &vertex : graph_)
         {
@@ -297,17 +299,17 @@ private:
     int window_width_;
     int window_height_;
     float cur_time_ = 0;
-    std::unique_ptr<geometry> globe_;
-    std::unique_ptr<geometry> cities_;
+    std::unique_ptr<geometry<globe_vertex>> globe_;
 
     using city_vertex = std::tuple<glm::vec3, float>;
+    std::unique_ptr<geometry<city_vertex>> cities_;
 
     struct connection
     {
         bool active;
         float elapsed = 0.0;;
         int target_vertex;
-        std::unique_ptr<geometry> mesh;
+        std::unique_ptr<geometry<connection_vertex>> mesh;
     };
 
     struct graph_vertex

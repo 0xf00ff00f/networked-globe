@@ -12,7 +12,7 @@ public:
         : horiz_blur_fb_(width, height)
         , vert_blur_fb_(width, height)
     {
-        quad_.set_data(std::vector<std::tuple<glm::vec2, glm::vec2>>{
+        quad_.set_data(std::vector<vertex>{
             {{-1, -1}, {0, 0}}, {{-1, 1}, {0, 1}}, {{1, -1}, {1, 0}}, {{1, 1}, {1, 1}}});
         program_.add_shader(GL_VERTEX_SHADER, "shaders/blur.vert");
         program_.add_shader(GL_FRAGMENT_SHADER, "shaders/blur.frag");
@@ -54,7 +54,8 @@ public:
     }
 
 private:
-    geometry quad_;
+    using vertex = std::tuple<glm::vec2, glm::vec2>;
+    geometry<vertex> quad_;
     shader_program program_;
     framebuffer horiz_blur_fb_;
     framebuffer vert_blur_fb_;
